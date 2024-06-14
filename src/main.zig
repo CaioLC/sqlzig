@@ -43,7 +43,11 @@ pub fn main() !void {
         } else {
             const statement_res = statement_command(&input);
             switch (statement_res) {
-                Statement.INSERT => try parse_insert(&input),
+                Statement.INSERT => {
+                    parse_insert(&input) catch |err| {
+                        std.debug.print("An error occurred: {}\nInput: {s}\n",.{err, input});
+                    };
+                },
                 Statement.SELECT => try stdout.print("Selecting!\n", .{}),
                 Statement.UNRECOGNIZED_STATEMENT => try stdout.print("Unrecognized: {s}\n", .{input}),
             }
@@ -60,6 +64,7 @@ fn meta_command(input_buffer: *const []u8) MetaCommandResult {
 }
 
 fn statement_command(input_buffer: *const []u8) Statement {
+    if (input_buffer.len < 6) return Statement.UNRECOGNIZED_STATEMENT;
     if (std.mem.eql(u8, input_buffer.*[0..6], "insert")) return Statement.INSERT;
     if (std.mem.eql(u8, input_buffer.*[0..6], "select")) return Statement.SELECT;
     return Statement.UNRECOGNIZED_STATEMENT;
@@ -67,17 +72,27 @@ fn statement_command(input_buffer: *const []u8) Statement {
 
 fn parse_insert(input_buffer: *const []u8) !void {
     var params = std.mem.tokenizeAny(u8, input_buffer.*, " ");
-    print("{s}\n", .{params.next().?});
-    print("{s}\n", .{params.next().?});
-    print("{s}\n", .{params.next().?});
-    print("{s}\n", .{params.next().?});
-    // const row = TableRow {
-    //     .id = params.next().?,
-    //     .username = params.next().?,
-    //     .email = params.next().?,
-    // };
+    // const stdout = std.io.getStdOut().writer();
+    _ = params.next().?;
+    const id = params.next() orelse return ParsingError.NoMoreParams;
+    const username_slice = params.next() orelse return ParsingError.NoMoreParams;
+    var username: [32]u8 = undefined;
+    std.mem.copyForwards(u8, username[0..], username_slice);
+    const email_slice = params.next() orelse return ParsingError.NoMoreParams;
+    var email: [255]u8 = undefined;
+    std.mem.copyForwards(u8, email[0..], email_slice);
+    const row = TableRow {
+        .id = try stringToInt(id),
+        .username = username,
+        .email = email,
+    };
+    print("{}\n", .{row});
     // try table.insert(row);
 }
+
+const ParsingError = error{
+    NoMoreParams
+};
 
 const USER_NAME_SIZE = 32;
 const EMAIL_SIZE = 255;
@@ -98,3 +113,7 @@ const Table = struct {
 };
 
 const Page = struct {};
+
+fn stringToInt(s: []const u8)!u32 {
+    return std.fmt.parseInt(u32, s, 10) catch unreachable; // Assuming the string is guaranteed to be a valid u32
+}
