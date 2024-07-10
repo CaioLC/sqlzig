@@ -1,7 +1,7 @@
 const std = @import("std");
 const print = std.debug.print;
 
-const MetaCommandResult = enum { EXIT, SUCCESS, UNRECOGNIZED_COMMAND };
+const MetaCommandResult = enum { EXIT, SUCCESS, HELP, UNRECOGNIZED_COMMAND };
 const Statement = enum { INSERT, SELECT, UNRECOGNIZED_STATEMENT };
 const ParsingError = error{NoMoreParams};
 
@@ -37,23 +37,32 @@ const Table = struct {
 
     fn insert(table: *Table, row: TableRow) !void {
         const mem_address = try table.row_slot(row.id);
-        if (table.pages[mem_address.page]) |page_ptr| {
-            print("{any}\n", .{page_ptr.*.len});
-            const ser = try serialize(row);
-            print("{b}", .{ser});
-        } else {
-            unreachable;
-        }
+        // print("{}\n", .{mem_address});
+        const new_page = table.pages[mem_address.page].?;
+        print("insert type info    :   {}\n", .{@TypeOf(new_page.*)});
+        print("insert pointer addrs:   {}\n", .{new_page});
+        const ser = try serialize(row);
+        std.mem.copyForwards(u8, new_page.*[0..ser.len], &ser);
+        // print("{c}\n", .{ser});
+        // std.mem.copyForwards(u8, page_ptr.*[mem_address.offset .. mem_address.offset + ROW_SIZE], &ser);
     }
 
     fn row_slot(table: *Table, row_id: u32) !MemAddres {
         const page_num = row_id / ROWS_PER_PAGE;
         const page_ptr = table.pages[page_num];
         if (page_ptr == null) { // if points to unitialized variable
-            print("Pointer is null or uninitialized\n", .{});
             var new_page = try table.allocator.alloc(u8, PAGE_SIZE);
             table.pages[page_num] = &new_page;
+            print("type info    :   {}\n", .{@TypeOf(new_page)});
+            print("pointer addrs:   {}\n", .{&new_page});
+            // print("memory location: {*}\n", .{new_page});
+            // const same_page = table.pages[page_num].?;
+            // std.mem.copyForwards(u8, same_page.*, "testint_my_page");
         }
+        // const page = table.pages[page_num];
+        // print("pointer addrs: {?}\n", .{page});
+        // print("memory location: {*}\n", .{page});
+
         const row_offset = row_id % ROWS_PER_PAGE;
         const byte_offset = row_offset * ROW_SIZE;
         // print("page_num {}\n", .{page_num});
@@ -102,28 +111,34 @@ pub fn main() !void {
     // Allocator
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
-    const allocator = arena.allocator();
 
     // Initialize Table
+    const allocator = arena.allocator();
     var table = try Table.init(&allocator, "my_table");
 
     // Initialize buffer for user requests
-    // var buff: [4096]u8 = undefined;
-    var buff: [100]u8 = undefined;
+    var buff: [4096]u8 = undefined;
 
     // PROGRAM LOOP
     try stdout.print("Welcome to SQLZIG!\n", .{});
     while (true) {
         _ = try stdout.print("(sqlzig) > ", .{});
         var input = try nextLine(stdin, &buff);
-        // input = input[0..input.len - 1]; // drop the delimiter
 
         if (input[0] == '.') {
-            // _ = try stdout.print("Expected {s}, got: {s}\n", .{".exit", input});
-            // _ = try stdout.print("Expected {b:0>8}, got: {b:0>8}\n", .{".exit", input[0..input.len - 1]});
             const command_res = meta_command(&input);
             switch (command_res) {
                 MetaCommandResult.EXIT => break,
+                MetaCommandResult.HELP => try stdout.print(
+                    \\ Available Commands:
+                    \\   MetaCommands:
+                    \\     .exit
+                    \\     .help
+                    \\   Statements:
+                    \\     insert stmt
+                    \\     select stmt
+                    \\
+                , .{}),
                 MetaCommandResult.SUCCESS => try stdout.print("You entered: {s}\n", .{&input}),
                 MetaCommandResult.UNRECOGNIZED_COMMAND => try stdout.print("Unrecognized command: {s}\n", .{input}),
             }
@@ -143,11 +158,9 @@ pub fn main() !void {
 }
 
 fn meta_command(input_buffer: *[]const u8) MetaCommandResult {
-    if (std.mem.eql(u8, input_buffer.*, ".exit")) {
-        return MetaCommandResult.EXIT;
-    } else {
-        return MetaCommandResult.UNRECOGNIZED_COMMAND;
-    }
+    if (std.mem.eql(u8, input_buffer.*, ".exit")) return MetaCommandResult.EXIT;
+    if (std.mem.eql(u8, input_buffer.*, ".help")) return MetaCommandResult.HELP;
+    return MetaCommandResult.UNRECOGNIZED_COMMAND;
 }
 
 fn statement_command(input_buffer: *[]const u8) Statement {
@@ -164,16 +177,18 @@ fn parse_insert(table: *Table, input_buffer: *[]const u8) !void {
     const id = params.next() orelse return ParsingError.NoMoreParams;
     const username_slice = params.next() orelse return ParsingError.NoMoreParams;
     var username: [USERNAME_SIZE]u8 = undefined;
-    std.mem.copyBackwards(u8, username[0..], username_slice);
+    std.mem.copyForwards(u8, username[0..], username_slice); // NOTE: dont know if backwards or forwards
     const email_slice = params.next() orelse return ParsingError.NoMoreParams;
     var email: [EMAIL_SIZE]u8 = undefined;
-    std.mem.copyBackwards(u8, email[0..], email_slice);
+    std.mem.copyForwards(u8, email[0..], email_slice);
     const row = TableRow{
         .id = try stringToInt(id),
         .username = username,
         .email = email,
     };
-    try table.insert(row);
+    table.insert(row) catch |err| {
+        print("Writing failed: {}", .{err});
+    };
 }
 
 fn stringToInt(s: []const u8) !u32 {
