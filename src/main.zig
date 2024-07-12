@@ -23,26 +23,22 @@ const TableRow = struct {
 const Table = struct {
     allocator: *const std.mem.Allocator,
     name: []const u8,
-    num_rows: u32,
-    pages: [TABLE_MAX_PAGES]?*[]u8,
+    pages: [TABLE_MAX_PAGES]?[*]u8,
 
     fn init(allocator: *const std.mem.Allocator, name: []const u8) !Table {
         return Table{
             .allocator = allocator,
             .name = name,
-            .num_rows = 0,
             .pages = undefined,
         };
     }
 
     fn insert(table: *Table, row: TableRow) !void {
         const mem_address = try table.row_slot(row.id);
-        // print("{}\n", .{mem_address});
         const new_page = table.pages[mem_address.page].?;
-        print("insert type info    :   {}\n", .{@TypeOf(new_page.*)});
-        print("insert pointer addrs:   {}\n", .{new_page});
         const ser = try serialize(row);
-        std.mem.copyForwards(u8, new_page.*[0..ser.len], &ser);
+        const slice_dest: []u8 = new_page[mem_address.offset .. mem_address.offset + ROW_SIZE];
+        std.mem.copyForwards(u8, slice_dest, &ser);
         // print("{c}\n", .{ser});
         // std.mem.copyForwards(u8, page_ptr.*[mem_address.offset .. mem_address.offset + ROW_SIZE], &ser);
     }
@@ -51,24 +47,14 @@ const Table = struct {
         const page_num = row_id / ROWS_PER_PAGE;
         const page_ptr = table.pages[page_num];
         if (page_ptr == null) { // if points to unitialized variable
-            var new_page = try table.allocator.alloc(u8, PAGE_SIZE);
-            table.pages[page_num] = &new_page;
+            const new_page = try table.allocator.alloc(u8, PAGE_SIZE);
+            table.pages[page_num] = new_page.ptr;
             print("type info    :   {}\n", .{@TypeOf(new_page)});
-            print("pointer addrs:   {}\n", .{&new_page});
-            // print("memory location: {*}\n", .{new_page});
-            // const same_page = table.pages[page_num].?;
-            // std.mem.copyForwards(u8, same_page.*, "testint_my_page");
+            print("len addrs    :   {}\n", .{new_page.len});
+            print("pointer addrs:   {*}\n", .{new_page.ptr});
         }
-        // const page = table.pages[page_num];
-        // print("pointer addrs: {?}\n", .{page});
-        // print("memory location: {*}\n", .{page});
-
         const row_offset = row_id % ROWS_PER_PAGE;
         const byte_offset = row_offset * ROW_SIZE;
-        // print("page_num {}\n", .{page_num});
-        // print("page {}\n", .{&table.pages[page_num]});
-        // print("row_offset {}\n", .{row_offset});
-        // print("byte_offset {}\n", .{byte_offset});
         return MemAddres{ .page = page_num, .offset = byte_offset };
     }
 };
@@ -109,11 +95,10 @@ pub fn main() !void {
     const stdin = std.io.getStdIn().reader();
     const stdout = std.io.getStdOut().writer();
     // Allocator
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer arena.deinit();
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const allocator = gpa.allocator();
 
     // Initialize Table
-    const allocator = arena.allocator();
     var table = try Table.init(&allocator, "my_table");
 
     // Initialize buffer for user requests
