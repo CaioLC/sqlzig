@@ -39,8 +39,6 @@ const Table = struct {
         const ser = try serialize(row);
         const slice_dest: []u8 = new_page[mem_address.offset .. mem_address.offset + ROW_SIZE];
         std.mem.copyForwards(u8, slice_dest, &ser);
-        // print("{c}\n", .{ser});
-        // std.mem.copyForwards(u8, page_ptr.*[mem_address.offset .. mem_address.offset + ROW_SIZE], &ser);
     }
 
     fn row_slot(table: *Table, row_id: u32) !MemAddres {
@@ -72,8 +70,18 @@ fn serialize(row: TableRow) ![ROW_SIZE]u8 {
     }
     return buffer;
 }
-// fn deserialize(bin: *[ROW_SIZE]u8) TableRow {
-// }
+fn deserialize(bin: []u8) TableRow {
+    var id: u32 = undefined;
+    for (bin[0..4], 0..4) |byte, i| {
+        const n: u8 = @bitCast(byte);
+        id |= n << i * 8;
+    }
+    const username: [USERNAME_SIZE]u8 = undefined;
+    const email: [EMAIL_SIZE]u8 = undefined;
+    std.mem.copyForwards(u8, username, bin[4 .. 4 + USERNAME_SIZE]);
+    std.mem.copyForwards(u8, bin[4 + USERNAME_SIZE ..]);
+    return TableRow{ .id = id, .username = username, .email = email };
+}
 
 const Page = struct {};
 const MemAddres = struct {
@@ -83,7 +91,6 @@ const MemAddres = struct {
 
 fn nextLine(reader: anytype, buffer: []u8) ![]const u8 {
     const line = (try reader.readUntilDelimiter(buffer, '\n'));
-    // trim annoying windows-only carriage return character
     if (@import("builtin").os.tag == .windows) {
         return std.mem.trimRight(u8, line, "\r");
     }
@@ -135,7 +142,11 @@ pub fn main() !void {
                         std.debug.print("An error occurred: {}\nInput: {s}\n", .{ err, input });
                     };
                 },
-                Statement.SELECT => try stdout.print("Selecting!\n", .{}),
+                Statement.SELECT => {
+                    parse_select(&table, &input) catch |err| {
+                        std.debug.print("An error occurred: {}\nInput: {s}\n", .{ err, input });
+                    };
+                },
                 Statement.UNRECOGNIZED_STATEMENT => try stdout.print("Unrecognized: {s}\n", .{input}),
             }
         }
@@ -174,6 +185,30 @@ fn parse_insert(table: *Table, input_buffer: *[]const u8) !void {
     table.insert(row) catch |err| {
         print("Writing failed: {}", .{err});
     };
+}
+
+fn parse_select(table: *Table, input_buffer: *[]const u8) !void {
+    _ = input_buffer;
+    for (table.pages) |page| {
+        if (page) |p| {
+            try print_rows(p);
+        }
+    }
+}
+
+fn print_rows(page: [*]u8) !void {
+    // Assuming we want to run indefinitely for demonstration
+    var i: u32 = 0; // Initialize the counter variable
+    while (true) : (i += ROW_SIZE) {
+        if (i >= PAGE_SIZE) {
+            break;
+        }
+        const row_bin = page[i .. i + ROW_SIZE];
+        const row = deserialize(row_bin);
+        if (row.id < 3) {
+            print("{}\n", .{row});
+        }
+    }
 }
 
 fn stringToInt(s: []const u8) !u32 {
