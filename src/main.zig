@@ -71,15 +71,15 @@ fn serialize(row: TableRow) ![ROW_SIZE]u8 {
     return buffer;
 }
 fn deserialize(bin: []u8) TableRow {
-    var id: u32 = undefined;
-    for (bin[0..4], 0..4) |byte, i| {
-        const n: u8 = @bitCast(byte);
-        id |= n << i * 8;
-    }
-    const username: [USERNAME_SIZE]u8 = undefined;
-    const email: [EMAIL_SIZE]u8 = undefined;
-    std.mem.copyForwards(u8, username, bin[4 .. 4 + USERNAME_SIZE]);
-    std.mem.copyForwards(u8, bin[4 + USERNAME_SIZE ..]);
+    const id: u32 = @bitCast(bin[0..4].*);
+    // for (bin[0..4], 0..4) |byte, i| {
+    //     const n: u32 = @bitCast(byte);
+    //     id |= n << i * 8;
+    // }
+    var username: [USERNAME_SIZE]u8 = undefined;
+    var email: [EMAIL_SIZE]u8 = undefined;
+    std.mem.copyForwards(u8, &username, bin[4 .. 4 + USERNAME_SIZE]);
+    std.mem.copyForwards(u8, &email, bin[4 + USERNAME_SIZE .. 4 + USERNAME_SIZE + EMAIL_SIZE]);
     return TableRow{ .id = id, .username = username, .email = email };
 }
 
