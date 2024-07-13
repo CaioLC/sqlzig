@@ -28,16 +28,35 @@ const TableRow = struct {
         _ = fmt;
         _ = options;
 
-        try writer.print(
-            \\TableRow
-            \\  id: {}
-            \\  username: {s}
-            \\  email: {s}
-        , .{
-            self.id,
-            self.username,
-            self.email,
-        });
+        // Correctly calculate the last index for username and email
+        const user_idx = for (self.username, 0..self.username.len) |u, i| {
+            if (u == 170) break i;
+        } else self.username.len;
+        const email_idx = for (self.email, 0..self.email.len) |u, i| {
+            if (u == 170) break i;
+        } else self.email.len;
+
+        if (user_idx != 0) {
+            // Use the calculated indices to trim the arrays
+            const trimmed_username = self.username[0..user_idx];
+            const trimmed_email = self.email[0..email_idx];
+
+            try writer.print(
+                \\ {}    | {s}        | {s}
+                \\
+            , .{
+                self.id,
+                trimmed_username,
+                trimmed_email,
+            });
+        }
+    }
+
+    fn last_index(buf: *[]u8) usize {
+        for (buf, 0..buf.len) |u, i| {
+            if (u == 170) return i;
+        }
+        return buf.len;
     }
 };
 
@@ -210,6 +229,7 @@ fn parse_insert(table: *Table, input_buffer: *[]const u8) !void {
 
 fn parse_select(table: *Table, input_buffer: *[]const u8) !void {
     _ = input_buffer;
+    print("id    | username    | email\n", .{});
     for (table.pages) |page| {
         if (page) |p| {
             try print_rows(p);
@@ -226,9 +246,8 @@ fn print_rows(page: [*]u8) !void {
         }
         const row_bin = page[i .. i + ROW_SIZE];
         const row = deserialize(row_bin);
-        if (row.id < 3) {
-            print("{}\n", .{row});
-        }
+        // if (i < 3) print("{}\n", .{row});
+        print("{}", .{row});
     }
 }
 
