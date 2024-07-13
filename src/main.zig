@@ -18,6 +18,27 @@ const TableRow = struct {
     id: u32,
     username: [USERNAME_SIZE]u8,
     email: [EMAIL_SIZE]u8,
+
+    pub fn format(
+        self: TableRow,
+        comptime fmt: []const u8,
+        options: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
+        _ = fmt;
+        _ = options;
+
+        try writer.print(
+            \\TableRow
+            \\  id: {}
+            \\  username: {s}
+            \\  email: {s}
+        , .{
+            self.id,
+            self.username,
+            self.email,
+        });
+    }
 };
 
 const Table = struct {
@@ -200,7 +221,7 @@ fn print_rows(page: [*]u8) !void {
     // Assuming we want to run indefinitely for demonstration
     var i: u32 = 0; // Initialize the counter variable
     while (true) : (i += ROW_SIZE) {
-        if (i >= PAGE_SIZE) {
+        if (i + ROW_SIZE >= PAGE_SIZE) {
             break;
         }
         const row_bin = page[i .. i + ROW_SIZE];
